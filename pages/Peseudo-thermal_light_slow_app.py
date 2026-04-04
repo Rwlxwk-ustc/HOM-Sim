@@ -57,7 +57,7 @@ def get_plot_data(tau, N, Om1, Om2, Dw1, Dw2, wc1, wc2, I1, I2):
 # ---------------------------------------------------------
 # 2. Streamlit UI 界面
 # ---------------------------------------------------------
-st.title("多模 HOM 干涉模拟 (赝热光/Pseudo-thermal Light)")
+st.title("MM-HOM Pseudo-thermal Light")
 
 # 三列布局：左侧控制光路1，中间控制光路2和全局参数，右侧画图
 col_ctrl1, col_ctrl2, col_plot = st.columns([1, 1, 3])
