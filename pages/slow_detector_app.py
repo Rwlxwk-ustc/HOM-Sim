@@ -43,7 +43,7 @@ def get_slow_plot_data(tau, N, Omega, Dw1, Dw2, wc1, wc2, I1, I2, dw0):
     
     return E1_spec, E2_spec, tau_range, Pc_final, current_Pc
 
-st.title("多模 HOM 干涉模拟 (慢探测器模型)")
+st.title("MM-HOM Slow Detector")
 
 # 使用 Streamlit 的侧边栏或分列布局来放置滑块
 col1, col2 = st.columns(2)
