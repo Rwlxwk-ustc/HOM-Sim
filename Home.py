@@ -9,4 +9,5 @@ st.title("By Lzy @2026-04")
 st.markdown("""
 * Slow Detector ：快探测器理想化模拟
 * Fast Detector ：慢探测器理想化模拟
+* Pseudo-thermal light ：赝热光模拟
 """)
