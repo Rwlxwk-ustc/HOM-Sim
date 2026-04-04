@@ -57,7 +57,7 @@ def get_fast_plot_data(tau, N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2)
 # ---------------------------------------------------------
 # 2. Streamlit UI 界面
 # ---------------------------------------------------------
-st.title("多模 HOM 干涉模拟 (快探测器响应)")
+st.title(MM-HOM Fast detector)
 
 # 使用 3 列布局：左列滑块，中列滑块，右列图表
 col_controls_1, col_controls_2, col_plot = st.columns([1, 1, 3])
