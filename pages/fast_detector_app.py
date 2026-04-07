@@ -1,33 +1,15 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 
 # ---------------------------------------------------------
-# 强制中文字体
+# 0. 页面设置（图表文字用英文，避免中文字体问题）
 # ---------------------------------------------------------
-def set_chinese_font():
-    font_names = ['SimHei', 'Microsoft YaHei', 'WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'Arial Unicode MS']
-    for font in font_names:
-        try:
-            fm.findfont(font, fallback_to_default=False)
-            plt.rcParams['font.sans-serif'] = [font]
-            plt.rcParams['axes.unicode_minus'] = False
-            return
-        except:
-            continue
-    chinese_fonts = [f.name for f in fm.fontManager.ttflist if 'CJK' in f.name or 'Hei' in f.name or 'YaHei' in f.name]
-    if chinese_fonts:
-        plt.rcParams['font.sans-serif'] = [chinese_fonts[0]]
-        plt.rcParams['axes.unicode_minus'] = False
-    else:
-        plt.rcParams['font.sans-serif'] = ['sans-serif']
-        plt.rcParams['axes.unicode_minus'] = False
-
-set_chinese_font()
+st.set_page_config(layout="wide", page_title="Fast Detector HOM Simulation")
+plt.rcParams['axes.unicode_minus'] = False
 
 # ---------------------------------------------------------
-# 物理计算核心（与原代码相同，省略...）
+# 1. 物理计算核心 (快探测器解析模型，包含线宽 dw1, dw2)
 # ---------------------------------------------------------
 W_MIN, W_MAX = -150.0, 150.0
 omega_axis = np.linspace(W_MIN, W_MAX, 6000)
@@ -40,11 +22,13 @@ def get_fast_plot_data(tau, N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2,
     n2_k = I2 * np.exp(-(w2_k - wc2)**2 / (2 * Dw2**2))
     N1_total = np.sum(n1_j)
     N2_total = np.sum(n2_k)
+    
     E1_spec = np.zeros_like(omega_axis)
     E2_spec = np.zeros_like(omega_axis)
     for i in range(N):
         E1_spec += n1_j[i] * np.exp(-(omega_axis - w1_j[i])**2 / (2 * dw1**2))
         E2_spec += n2_k[i] * np.exp(-(omega_axis - w2_k[i])**2 / (2 * dw2**2))
+    
     tau_range = np.linspace(-6.0, 6.0, 5000)
     S1 = np.sum(n1_j[:, None] * np.exp(-1j * w1_j[:, None] * tau_range), axis=0)
     S2 = np.sum(n2_k[:, None] * np.exp( 1j * w2_k[:, None] * tau_range), axis=0)
@@ -52,6 +36,7 @@ def get_fast_plot_data(tau, N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2,
     interference = 2 * np.real(S1 * S2) * global_envelope
     baseline = (N1_total + N2_total)**2
     Pc_final = 1.0 - interference / baseline
+    
     c_S1 = np.sum(n1_j * np.exp(-1j * w1_j * tau))
     c_S2 = np.sum(n2_k * np.exp( 1j * w2_k * tau))
     c_envelope = np.exp(-(dw1**2 + dw2**2) / 2.0 * tau**2)
@@ -60,10 +45,9 @@ def get_fast_plot_data(tau, N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2,
     return E1_spec, E2_spec, tau_range, Pc_final, current_Pc
 
 # ---------------------------------------------------------
-# Streamlit UI
+# 2. Streamlit UI (侧边栏控件保留中文，图表用英文)
 # ---------------------------------------------------------
-st.set_page_config(layout="wide", page_title="快探测器符合概率模拟器")
-st.title("快探测器符合概率 $g^{(2)}(\\tau)$ 模拟器")
+st.title("多模 HOM 干涉模拟 (快探测器响应)")
 
 st.sidebar.header("参数调节面板")
 
@@ -104,32 +88,33 @@ with st.sidebar.expander("梳齿结构参数", expanded=False):
 
 # 计算数据
 E1_s, E2_s, t_r, Pc_f, c_Pc = get_fast_plot_data(
-    tau, N, Om1, Om2, w0_1, w0_2,
-    Dw1, Dw2, wc1, wc2, I1, I2, dw1, dw2
+    tau, N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2, dw1, dw2
 )
 
-# 绘图
+# ---------------------------------------------------------
+# 3. 绘图（全部使用英文标签）
+# ---------------------------------------------------------
 fig = plt.figure(figsize=(12, 8))
 ax1 = plt.subplot(2, 1, 1)
-ax1.plot(omega_axis, E1_s, label='光路 1 光谱', color='blue', alpha=0.6)
-ax1.plot(omega_axis, E2_s, label='光路 2 光谱', color='red', linestyle='--')
-ax1.set_title("频域光谱展示")
+ax1.plot(omega_axis, E1_s, label='Path 1 Spectrum', color='blue', alpha=0.6)
+ax1.plot(omega_axis, E2_s, label='Path 2 Spectrum', color='red', linestyle='--')
+ax1.set_title("Frequency Domain Spectra")
 ax1.legend(loc='upper right')
 ax1.set_xlim(-zoom_w, zoom_w)
 max_E = max(np.max(E1_s), np.max(E2_s))
 ax1.set_ylim(0, max_E * 1.2 if max_E > 0 else 1)
-ax1.set_xlabel("频率 (任意单位)")
-ax1.set_ylabel("强度")
+ax1.set_xlabel("Frequency (a.u.)")
+ax1.set_ylabel("Intensity")
 
 ax2 = plt.subplot(2, 1, 2)
-ax2.plot(t_r, Pc_f, color='green', lw=1.2, label="$g^{(2)}(\\tau)$")
-ax2.plot(tau, c_Pc, 'ro', markersize=6, label="当前 τ 位置")
-ax2.set_title("归一化符合概率 $g^{(2)}(\\tau)$ [快探测器实时响应]")
+ax2.plot(t_r, Pc_f, color='green', lw=1.2, label='$g^{(2)}(\\tau)$')
+ax2.plot(tau, c_Pc, 'ro', markersize=6, label='Current $\\tau$')
+ax2.set_title("Normalized Coincidence Probability $g^{(2)}(\\tau)$ [Fast Detector]")
 ax2.set_xlim(-zoom_t, zoom_t)
 ax2.set_ylim(0.0, 2.2)
 ax2.grid(True, alpha=0.3)
-ax2.set_xlabel("延迟 τ (时间单位)")
-ax2.set_ylabel("符合概率")
+ax2.set_xlabel("Delay $\\tau$ (time units)")
+ax2.set_ylabel("Coincidence Probability")
 ax2.legend(loc='upper right')
 
 plt.tight_layout()
