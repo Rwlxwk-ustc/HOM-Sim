@@ -2,133 +2,146 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# 设置页面布局较宽，适合图表展示
-st.set_page_config(page_title="快探测器 HOM 干涉", layout="wide")
-
-# (注意：部署在云端时，Linux 服务器可能没有本地中文字体，建议使用默认字体或在云端配置字体)
+# ---------------------------------------------------------
+# 0. 中文字体兼容性设置
+# ---------------------------------------------------------
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False 
+plt.rcParams['axes.unicode_minus'] = False
 
+# ---------------------------------------------------------
+# 1. 物理计算核心 (快探测器解析模型)
+# ---------------------------------------------------------
 W_MIN, W_MAX = -150.0, 150.0
 omega_axis = np.linspace(W_MIN, W_MAX, 6000)
 
-# ---------------------------------------------------------
-# 1. 物理计算核心 (缓存全曲线数据以加速 UI 响应)
-# ---------------------------------------------------------
-@st.cache_data
-def compute_fast_physics(N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2, dw1, dw2):
+def get_fast_plot_data(tau, N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2, dw1, dw2):
     # 构建模式索引 j
     j_indices = np.arange(N) - (N - 1) / 2.0
-    
+
     w1_j = w0_1 + j_indices * Om1
     w2_k = w0_2 + j_indices * Om2
-    
+
     # 光子数包络分布
     n1_j = I1 * np.exp(-(w1_j - wc1)**2 / (2 * Dw1**2))
     n2_k = I2 * np.exp(-(w2_k - wc2)**2 / (2 * Dw2**2))
-    
+
     N1_total = np.sum(n1_j)
     N2_total = np.sum(n2_k)
-    
-    # 频域光谱计算 (应用独立的 dw1 和 dw2)
+
+    # 可视化频域光谱 (应用独立的子波包线宽 dw1 和 dw2)
     E1_spec = np.zeros_like(omega_axis)
     E2_spec = np.zeros_like(omega_axis)
     for i in range(N):
         E1_spec += n1_j[i] * np.exp(-(omega_axis - w1_j[i])**2 / (2 * dw1**2))
         E2_spec += n2_k[i] * np.exp(-(omega_axis - w2_k[i])**2 / (2 * dw2**2))
-    
-    # 时域范围修改为 -6 到 6，增加采样点数确保缩放时依然平滑
-    tau_range = np.linspace(-6.0, 6.0, 6000)
-    
+
+    # 采样范围 -6.0 到 6.0
+    tau_range = np.linspace(-6.0, 6.0, 5000)
+
     # 向量化计算求和项
     S1 = np.sum(n1_j[:, None] * np.exp(-1j * w1_j[:, None] * tau_range), axis=0)
     S2 = np.sum(n2_k[:, None] * np.exp( 1j * w2_k[:, None] * tau_range), axis=0)
-    
+
     # 快探测器时域干涉的全局衰减包络
     global_envelope = np.exp(-(dw1**2 + dw2**2) / 2.0 * tau_range**2)
-    
+
     interference = 2 * np.real(S1 * S2) * global_envelope
     baseline = (N1_total + N2_total)**2
-    
-    Pc_final = 1.0 - interference / baseline
-    
-    return E1_spec, E2_spec, tau_range, Pc_final, n1_j, w1_j, n2_k, w2_k, baseline
 
-# 单独计算当前的红点，不使用缓存，保证滑动 τ 时绝对平滑
-def get_current_point(tau, n1_j, w1_j, n2_k, w2_k, baseline, dw1, dw2):
+    Pc_final = 1.0 - interference / baseline
+
+    # 计算当前点（滑块指示点）的 g(2)
     c_S1 = np.sum(n1_j * np.exp(-1j * w1_j * tau))
     c_S2 = np.sum(n2_k * np.exp( 1j * w2_k * tau))
     c_envelope = np.exp(-(dw1**2 + dw2**2) / 2.0 * tau**2)
     c_interference = 2 * np.real(c_S1 * c_S2) * c_envelope
-    return 1.0 - c_interference / baseline
+    current_Pc = 1.0 - c_interference / baseline
+
+    return E1_spec, E2_spec, tau_range, Pc_final, current_Pc
 
 # ---------------------------------------------------------
-# 2. UI 界面布局
+# 2. Streamlit 界面
 # ---------------------------------------------------------
-st.title("多模频率梳干涉模拟 (快探测器实时响应模型)")
-st.markdown("该模型包含了独立的子波包线宽控制，能够展示拍频包络包裹下的超快时间干涉图样。*(提示：点击滑块上方的数字即可直接键盘输入参数)*")
+st.set_page_config(layout="wide", page_title="快探测器符合概率模拟器")
+st.title("快探测器符合概率 $g^{(2)}(\\tau)$ 模拟器")
 
-col1, col2, col3 = st.columns([1, 1, 1.8]) 
+# ---------- 侧边栏：所有控制参数 ----------
+st.sidebar.header("参数调节面板")
 
-with col1:
-    st.subheader("⚙️ 整体与光路 1 参数")
-    # 修改延迟滑块范围为 -6.0 到 6.0
-    tau = st.slider('延迟 τ', -6.0, 6.0, 0.0, 0.01)
-    N = st.slider('梳齿数 N', 1, 31, 15, 1)
-    Om1 = st.slider('间距 Ω1', 1.0, 30.0, 2.0, 0.5)
-    w0_1 = st.slider('梳基频 ω1,0', -80.0, 80.0, 15.0, 1.0)
-    Dw1 = st.slider('带宽 Δω1', 2.0, 80.0, 5.0, 1.0)
-    wc1 = st.slider('中心 ω1,c', -80.0, 80.0, 0.0, 1.0)
-    I1 = st.slider('强度 I1', 0.1, 2.0, 1.0, 0.1)
-    dw1 = st.slider('光路 1 线宽 δω1', 0.1, 5.0, 0.8, 0.1)
+# 布局参数（使用 expander 分组）
+with st.sidebar.expander("显示范围调节", expanded=True):
+    col1, col2 = st.columns(2)
+    with col1:
+        zoom_w = st.slider("光谱 X 轴范围 ±", 10.0, 150.0, 150.0, 1.0, format="%.1f")
+    with col2:
+        zoom_t = st.slider("时域 X 轴范围 ±", 0.1, 6.0, 6.0, 0.1, format="%.2f")
 
-with col2:
-    st.subheader("⚙️ 光路 2 参数")
-    st.write(" ") 
-    st.write(" ")
-    Om2 = st.slider('间距 Ω2', 1.0, 30.0, 2.0, 0.5)
-    w0_2 = st.slider('梳基频 ω2,0', -80.0, 80.0, -15.0, 1.0)
-    Dw2 = st.slider('带宽 Δω2', 2.0, 80.0, 5.0, 1.0)
-    wc2 = st.slider('中心 ω2,c', -80.0, 80.0, 0.0, 1.0)
-    I2 = st.slider('强度 I2', 0.1, 2.0, 1.0, 0.1)
-    dw2 = st.slider('光路 2 线宽 δω2', 0.1, 5.0, 0.8, 0.1)
+with st.sidebar.expander("核心时延参数", expanded=True):
+    tau = st.slider("延迟 τ", -6.0, 6.0, 0.0, 0.01, format="%.3f")
 
-with col3:
-    st.subheader("📊 图表与坐标轴缩放")
-    
-    # 新增：X轴缩放控制区
-    zcol1, zcol2 = st.columns(2)
-    with zcol1:
-        zoom_w = st.slider('光谱 X轴范围 ±', 10.0, 150.0, 150.0, 1.0)
-    with zcol2:
-        zoom_t = st.slider('时域 X轴范围 ±', 0.1, 6.0, 6.0, 0.1)
+with st.sidebar.expander("光路1 参数", expanded=False):
+    col1, col2 = st.columns(2)
+    with col1:
+        I1 = st.slider("强度 I₁", 0.1, 2.0, 1.0, 0.05)
+        Om1 = st.slider("间距 Ω₁", 1.0, 30.0, 10.0, 0.5)
+        w0_1 = st.slider("梳基频 ω₁₀", -80.0, 80.0, 0.0, 1.0)
+        Dw1 = st.slider("带宽 Δω₁", 5.0, 80.0, 30.0, 1.0)
+    with col2:
+        wc1 = st.slider("包络中心 ω₁꜀", -80.0, 80.0, 0.0, 1.0)
+        dw1 = st.slider("线宽 δω₁", 0.1, 5.0, 0.8, 0.05)
 
-    # ---------------------------------------------------------
-    # 3. 计算与绘图
-    # ---------------------------------------------------------
-    E1_s, E2_s, t_r, Pc_f, n1_j, w1_j, n2_k, w2_k, baseline = compute_fast_physics(
-        N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2, dw1, dw2
-    )
-    c_Pc = get_current_point(tau, n1_j, w1_j, n2_k, w2_k, baseline, dw1, dw2)
+with st.sidebar.expander("光路2 参数", expanded=False):
+    col1, col2 = st.columns(2)
+    with col1:
+        I2 = st.slider("强度 I₂", 0.1, 2.0, 1.0, 0.05)
+        Om2 = st.slider("间距 Ω₂", 1.0, 30.0, 10.0, 0.5)
+        w0_2 = st.slider("梳基频 ω₂₀", -80.0, 80.0, 0.0, 1.0)
+        Dw2 = st.slider("带宽 Δω₂", 5.0, 80.0, 30.0, 1.0)
+    with col2:
+        wc2 = st.slider("包络中心 ω₂꜀", -80.0, 80.0, 0.0, 1.0)
+        dw2 = st.slider("线宽 δω₂", 0.1, 5.0, 0.8, 0.05)
 
-    fig, (ax_spectra, ax_curve) = plt.subplots(2, 1, figsize=(8, 8))
-    plt.subplots_adjust(hspace=0.3)
+with st.sidebar.expander("梳齿结构参数", expanded=False):
+    N = st.slider("梳齿数 N", 1, 31, 11, 1)
 
-    # 绘制频域
-    ax_spectra.plot(omega_axis, E1_s, label='Path 1 Spectrum', color='#1f77b4', alpha=0.8)
-    ax_spectra.plot(omega_axis, E2_s, label='Path 2 Spectrum', color='#ff7f0e', linestyle='--', alpha=0.8)
-    ax_spectra.set_title("Frequency Domain Spectra")
-    ax_spectra.set_xlim(-zoom_w, zoom_w) # 应用缩放
-    ax_spectra.set_ylim(0, max(np.max(E1_s), np.max(E2_s)) * 1.2 or 1)
-    ax_spectra.legend()
-    ax_spectra.grid(True, alpha=0.2)
+# ---------- 主区域：绘图 ----------
+# 计算数据
+E1_s, E2_s, t_r, Pc_f, c_Pc = get_fast_plot_data(
+    tau, N, Om1, Om2, w0_1, w0_2,
+    Dw1, Dw2, wc1, wc2, I1, I2, dw1, dw2
+)
 
-    # 绘制时域
-    ax_curve.plot(t_r, Pc_f, color='#2ca02c', lw=1.2)
-    ax_curve.plot([tau], [c_Pc], 'ro', markersize=6)
-    ax_curve.set_xlim(-zoom_t, zoom_t)   # 应用缩放
-    ax_curve.set_ylim(0.0, 2.2) 
-    ax_curve.set_title("Normalized Coincidence Probability $g^{(2)}(\\tau)$ [Fast Detector]")
-    ax_curve.grid(True, alpha=0.3)
+# 创建图形
+fig = plt.figure(figsize=(12, 8))
 
-    st.pyplot(fig)
+# 子图1：频谱
+ax1 = plt.subplot(2, 1, 1)
+ax1.plot(omega_axis, E1_s, label='光路 1 光谱', color='blue', alpha=0.6)
+ax1.plot(omega_axis, E2_s, label='光路 2 光谱', color='red', linestyle='--')
+ax1.set_title("频域光谱展示")
+ax1.legend(loc='upper right')
+ax1.set_xlim(-zoom_w, zoom_w)
+max_E = max(np.max(E1_s), np.max(E2_s))
+ax1.set_ylim(0, max_E * 1.2 if max_E > 0 else 1)
+ax1.set_xlabel("频率 (任意单位)")
+ax1.set_ylabel("强度")
+
+# 子图2：符合概率曲线
+ax2 = plt.subplot(2, 1, 2)
+ax2.plot(t_r, Pc_f, color='green', lw=1.2, label="$g^{(2)}(\\tau)$")
+ax2.plot(tau, c_Pc, 'ro', markersize=6, label="当前 τ 位置")
+ax2.set_title("归一化符合概率 $g^{(2)}(\\tau)$ [快探测器实时响应]")
+ax2.set_xlim(-zoom_t, zoom_t)
+ax2.set_ylim(0.0, 2.2)
+ax2.grid(True, alpha=0.3)
+ax2.set_xlabel("延迟 τ (时间单位)")
+ax2.set_ylabel("符合概率")
+ax2.legend(loc='upper right')
+
+plt.tight_layout()
+
+# 显示图形
+st.pyplot(fig)
+
+# 可选：显示当前 τ 处的符合概率数值
+st.info(f"当前延迟 τ = {tau:.3f} 时，符合概率 $g^{(2)}$ = {c_Pc:.4f}")
