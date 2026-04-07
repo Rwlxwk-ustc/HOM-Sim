@@ -37,8 +37,8 @@ def compute_fast_physics(N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2, dw
         E1_spec += n1_j[i] * np.exp(-(omega_axis - w1_j[i])**2 / (2 * dw1**2))
         E2_spec += n2_k[i] * np.exp(-(omega_axis - w2_k[i])**2 / (2 * dw2**2))
     
-    # 时域范围
-    tau_range = np.linspace(-3.0, 3.0, 3000)
+    # 时域范围修改为 -6 到 6，增加采样点数确保缩放时依然平滑
+    tau_range = np.linspace(-6.0, 6.0, 6000)
     
     # 向量化计算求和项
     S1 = np.sum(n1_j[:, None] * np.exp(-1j * w1_j[:, None] * tau_range), axis=0)
@@ -66,13 +66,14 @@ def get_current_point(tau, n1_j, w1_j, n2_k, w2_k, baseline, dw1, dw2):
 # 2. UI 界面布局
 # ---------------------------------------------------------
 st.title("多模频率梳干涉模拟 (快探测器实时响应模型)")
-st.markdown("该模型包含了独立的子波包线宽控制，能够展示拍频包络包裹下的超快时间干涉图样。")
+st.markdown("该模型包含了独立的子波包线宽控制，能够展示拍频包络包裹下的超快时间干涉图样。*(提示：点击滑块上方的数字即可直接键盘输入参数)*")
 
-col1, col2, col3 = st.columns([1, 1, 1.5]) # 左中放滑块，右侧放图表（如果你想上下布局，把图表放到底部即可）
+col1, col2, col3 = st.columns([1, 1, 1.8]) 
 
 with col1:
     st.subheader("⚙️ 整体与光路 1 参数")
-    tau = st.slider('延迟 τ', -3.0, 3.0, 0.0, 0.01)
+    # 修改延迟滑块范围为 -6.0 到 6.0
+    tau = st.slider('延迟 τ', -6.0, 6.0, 0.0, 0.01)
     N = st.slider('梳齿数 N', 1, 31, 15, 1)
     Om1 = st.slider('间距 Ω1', 1.0, 30.0, 2.0, 0.5)
     w0_1 = st.slider('梳基频 ω1,0', -80.0, 80.0, 15.0, 1.0)
@@ -83,7 +84,7 @@ with col1:
 
 with col2:
     st.subheader("⚙️ 光路 2 参数")
-    st.write(" ") # 占位对齐
+    st.write(" ") 
     st.write(" ")
     Om2 = st.slider('间距 Ω2', 1.0, 30.0, 2.0, 0.5)
     w0_2 = st.slider('梳基频 ω2,0', -80.0, 80.0, -15.0, 1.0)
@@ -92,17 +93,24 @@ with col2:
     I2 = st.slider('强度 I2', 0.1, 2.0, 1.0, 0.1)
     dw2 = st.slider('光路 2 线宽 δω2', 0.1, 5.0, 0.8, 0.1)
 
-# ---------------------------------------------------------
-# 3. 计算与绘图
-# ---------------------------------------------------------
-# 获取全曲线数据
-E1_s, E2_s, t_r, Pc_f, n1_j, w1_j, n2_k, w2_k, baseline = compute_fast_physics(
-    N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2, dw1, dw2
-)
-# 获取当前延迟点的红点数据
-c_Pc = get_current_point(tau, n1_j, w1_j, n2_k, w2_k, baseline, dw1, dw2)
-
 with col3:
+    st.subheader("📊 图表与坐标轴缩放")
+    
+    # 新增：X轴缩放控制区
+    zcol1, zcol2 = st.columns(2)
+    with zcol1:
+        zoom_w = st.slider('光谱 X轴范围 ±', 10.0, 150.0, 150.0, 1.0)
+    with zcol2:
+        zoom_t = st.slider('时域 X轴范围 ±', 0.1, 6.0, 6.0, 0.1)
+
+    # ---------------------------------------------------------
+    # 3. 计算与绘图
+    # ---------------------------------------------------------
+    E1_s, E2_s, t_r, Pc_f, n1_j, w1_j, n2_k, w2_k, baseline = compute_fast_physics(
+        N, Om1, Om2, w0_1, w0_2, Dw1, Dw2, wc1, wc2, I1, I2, dw1, dw2
+    )
+    c_Pc = get_current_point(tau, n1_j, w1_j, n2_k, w2_k, baseline, dw1, dw2)
+
     fig, (ax_spectra, ax_curve) = plt.subplots(2, 1, figsize=(8, 8))
     plt.subplots_adjust(hspace=0.3)
 
@@ -110,6 +118,7 @@ with col3:
     ax_spectra.plot(omega_axis, E1_s, label='Path 1 Spectrum', color='#1f77b4', alpha=0.8)
     ax_spectra.plot(omega_axis, E2_s, label='Path 2 Spectrum', color='#ff7f0e', linestyle='--', alpha=0.8)
     ax_spectra.set_title("Frequency Domain Spectra")
+    ax_spectra.set_xlim(-zoom_w, zoom_w) # 应用缩放
     ax_spectra.set_ylim(0, max(np.max(E1_s), np.max(E2_s)) * 1.2 or 1)
     ax_spectra.legend()
     ax_spectra.grid(True, alpha=0.2)
@@ -117,7 +126,8 @@ with col3:
     # 绘制时域
     ax_curve.plot(t_r, Pc_f, color='#2ca02c', lw=1.2)
     ax_curve.plot([tau], [c_Pc], 'ro', markersize=6)
-    ax_curve.set_ylim(0.0, 2.2) # 快探测器有拍频，上限会超过 1，设定为 2.2
+    ax_curve.set_xlim(-zoom_t, zoom_t)   # 应用缩放
+    ax_curve.set_ylim(0.0, 2.2) 
     ax_curve.set_title("Normalized Coincidence Probability $g^{(2)}(\\tau)$ [Fast Detector]")
     ax_curve.grid(True, alpha=0.3)
 
